@@ -14,7 +14,7 @@
 
 terraform {
   backend "s3" {
-    bucket       = "tbxkit-tofu-state" # TODO(damian): confirm/create this R2 bucket
+    bucket       = "tbxkit-tofu-state" # created via wrangler r2 bucket create, 2026-10-18
     key          = "org-state.tfstate"
     region       = "auto"
     use_lockfile = true
