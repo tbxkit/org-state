@@ -1,0 +1,226 @@
+name: tofu
+
+# PR checks + apply for tbxkit/org-state. Pattern reused from
+# hephaistos-rs/org-state (read-only reference), merged into one file
+# per this repo's request. This repo is public (since 2026-10-18) so it
+# can use a GitHub Environment the same way hephaistos-rs/org-state
+# does: `apply` runs behind the "apply" environment, which requires
+# Damian's approval and only deploys from `main`. See README "CI".
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tofu-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  fmt-validate:
+    name: fmt & validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: "1.13.0"
+
+      - name: Resource allowlist
+        run: bash scripts/check-allowlist.sh
+
+      - name: tofu fmt -check
+        run: tofu fmt -check -recursive -diff
+
+      - name: tofu init (no backend, no credentials -- provider download only)
+        run: tofu init -input=false -backend=false
+
+      - name: tofu validate
+        run: tofu validate -no-color
+
+  plan:
+    name: plan (PRs only, same-repo)
+    if: github.event_name == 'pull_request'
+    needs: fmt-validate
+    runs-on: ubuntu-latest
+    # A PR from a fork must never reach this job: it needs a real read
+    # credential, and that credential must never be reachable from a
+    # fork's workflow run.
+    env:
+      is_same_repo: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      contents: read
+      pull-requests: write # to post the plan summary as a PR comment
+    steps:
+      - name: Checkout
+        if: env.is_same_repo == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up OpenTofu
+        if: env.is_same_repo == 'true'
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: "1.13.0"
+          tofu_wrapper: false
+
+      - name: Resource allowlist
+        if: env.is_same_repo == 'true'
+        run: bash scripts/check-allowlist.sh
+
+      - name: tofu init
+        if: env.is_same_repo == 'true'
+        env:
+          TF_VAR_state_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
+          AWS_ENDPOINT_URL_S3: ${{ secrets.R2_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_READ_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_READ_SECRET_ACCESS_KEY }}
+        run: tofu init -input=false
+
+      - name: tofu plan
+        if: env.is_same_repo == 'true'
+        id: plan
+        env:
+          # The integrations/github provider reads GITHUB_TOKEN by
+          # default. This must NOT be the Actions-provided
+          # secrets.GITHUB_TOKEN (scoped to this one repo only) -- it's
+          # the repo secret GH_READ_TOKEN, a fine-grained PAT. See
+          # README "Bootstrap".
+          GITHUB_TOKEN: ${{ secrets.GH_READ_TOKEN }}
+          TF_VAR_state_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
+          AWS_ENDPOINT_URL_S3: ${{ secrets.R2_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_READ_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_READ_SECRET_ACCESS_KEY }}
+        run: |
+          set +e
+          # -lock=false: a PR plan only reads state, never blocks an apply.
+          tofu plan -no-color -input=false -lock=false -detailed-exitcode -out=pr.tfplan > plan.txt
+          echo "exitcode=$?" >> "$GITHUB_OUTPUT"
+          cat plan.txt
+
+      - name: Summarize plan and check for destroy/replace
+        if: env.is_same_repo == 'true' && steps.plan.outputs.exitcode != '1'
+        id: summary
+        run: |
+          tofu show -json pr.tfplan > plan.json
+
+          add=$(jq '[.resource_changes[]? | select(.change.importing == null and .change.actions == ["create"])] | length' plan.json)
+          change=$(jq '[.resource_changes[]? | select(.change.actions == ["update"])] | length' plan.json)
+          destroy=$(jq '[.resource_changes[]? | select(.change.actions == ["delete"])] | length' plan.json)
+          replace=$(jq '[.resource_changes[]? | select((.change.actions | contains(["delete"])) and (.change.actions | contains(["create"])))] | length' plan.json)
+          imports=$(jq '[.resource_changes[]? | select(.change.importing != null)] | length' plan.json)
+
+          repo_destroy_replace=$(jq '[.resource_changes[]? | select(.type == "github_repository") | select((.change.actions | contains(["delete"])))] | length' plan.json)
+
+          {
+            echo "add=$add"
+            echo "change=$change"
+            echo "destroy=$destroy"
+            echo "replace=$replace"
+            echo "imports=$imports"
+            echo "repo_destroy_replace=$repo_destroy_replace"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post plan summary on PR
+        if: env.is_same_repo == 'true' && steps.plan.outputs.exitcode != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "#### OpenTofu plan"
+            echo ""
+            echo "| import | add | change | destroy | replace |"
+            echo "|---|---|---|---|---|"
+            echo "| ${{ steps.summary.outputs.imports }} | ${{ steps.summary.outputs.add }} | ${{ steps.summary.outputs.change }} | ${{ steps.summary.outputs.destroy }} | ${{ steps.summary.outputs.replace }} |"
+            echo ""
+            if [ "${{ steps.summary.outputs.repo_destroy_replace }}" != "0" ]; then
+              echo "**:warning: This plan destroys or replaces a \`github_repository\` resource.**"
+              echo ""
+            fi
+            echo "<details><summary>Full plan output</summary>"
+            echo ""
+            echo '```'
+            head -c 60000 plan.txt
+            echo '```'
+            echo "</details>"
+          } > comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body-file comment.md
+
+      - name: Fail if plan errored
+        if: env.is_same_repo == 'true' && steps.plan.outputs.exitcode == '1'
+        run: |
+          echo "::error::tofu plan exited with an error -- see the plan output above."
+          exit 1
+
+      - name: Fail if the plan destroys or replaces a repository
+        if: env.is_same_repo == 'true' && steps.summary.outputs.repo_destroy_replace != '0'
+        run: |
+          echo "::error::Plan destroys or replaces a github_repository resource (count: ${{ steps.summary.outputs.repo_destroy_replace }}). Refusing -- a repository destroy/replace must never be auto-approved by a green check."
+          exit 1
+
+  apply:
+    name: apply
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: apply # requires Damian's approval before this job runs;
+    # see README "CI". Secrets below resolve from the "apply"
+    # environment's secrets, not the repo's.
+    concurrency:
+      group: tofu-apply
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      GITHUB_TOKEN: ${{ secrets.GH_APPLY_TOKEN }}
+      TF_VAR_state_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
+      AWS_ENDPOINT_URL_S3: ${{ secrets.R2_ENDPOINT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_WRITE_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_WRITE_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: "1.13.0"
+          tofu_wrapper: false
+
+      - name: Resource allowlist
+        run: bash scripts/check-allowlist.sh
+
+      - name: tofu init
+        run: tofu init -input=false
+
+      - name: tofu plan
+        run: |
+          tofu plan -no-color -input=false -out=main.tfplan | tee plan.txt
+          {
+            echo "### Applied plan"
+            echo '```'
+            cat plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Plan allowlist (saved plan)
+        run: bash scripts/check-allowlist.sh main.tfplan
+
+      - name: Fail if the plan destroys or replaces a repository
+        run: |
+          tofu show -json main.tfplan > plan.json
+          repo_destroy_replace=$(jq '[.resource_changes[]? | select(.type == "github_repository") | select((.change.actions | contains(["delete"])))] | length' plan.json)
+          if [ "$repo_destroy_replace" != "0" ]; then
+            echo "::error::Plan destroys or replaces a github_repository resource (count: $repo_destroy_replace). Refusing to apply -- this needs a human running tofu apply locally after review, not CI."
+            exit 1
+          fi
+
+      - name: tofu apply
+        # Applies exactly the saved, checked plan above, nothing re-planned.
+        run: tofu apply -no-color -input=false main.tfplan
