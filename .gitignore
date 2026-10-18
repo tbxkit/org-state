@@ -1,0 +1,19 @@
+# OpenTofu local state and working files.
+# State lives in R2 (see backend.tf) and must never be committed.
+#
+# .terraform.lock.hcl is NOT ignored — commit it, it pins provider checksums.
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Variable files can carry secrets; only *.tfvars.example is safe to commit.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!*.tfvars.json.example
+
+# Plan output files (may embed state/secret values).
+*.tfplan
+*.plan
