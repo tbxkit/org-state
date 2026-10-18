@@ -2,11 +2,10 @@ name: tofu
 
 # PR checks + apply for tbxkit/org-state. Pattern reused from
 # hephaistos-rs/org-state (read-only reference), merged into one file
-# per this repo's request. One real difference from hephaistos-rs: this
-# repo is private on a Free-plan org, so GitHub Environments (and
-# environment secrets, and required reviewers) aren't available here at
-# all -- GitHub only offers those on private repos with a Pro/Team/
-# Enterprise plan. See README "CI" for what that means for the apply gate.
+# per this repo's request. This repo is public (since 2026-10-18) so it
+# can use a GitHub Environment the same way hephaistos-rs/org-state
+# does: `apply` runs behind the "apply" environment, which requires
+# Damian's approval and only deploys from `main`. See README "CI".
 
 on:
   pull_request:
@@ -170,13 +169,9 @@ jobs:
     name: apply
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # No `environment:` here -- see the top-of-file note. GitHub
-    # Environments (and environment secrets) require a Pro/Team/
-    # Enterprise plan for a private repository; this org is on Free.
-    # The only gates on this job are: (1) it only runs on `main`, and
-    # (2) `main` is only reachable through a reviewed, checked PR via
-    # branch protection. Revisit if org-state is ever made public
-    # (matching hephaistos-rs) or the org upgrades its plan.
+    environment: apply # requires Damian's approval before this job runs;
+    # see README "CI". Secrets below resolve from the "apply"
+    # environment's secrets, not the repo's.
     concurrency:
       group: tofu-apply
       cancel-in-progress: false

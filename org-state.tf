@@ -16,7 +16,9 @@ resource "github_repository" "org_state" {
   # `gh repo create` was given a --description string at creation time —
   # worth checking whether it actually took; set explicitly on GitHub and
   # fill in here if not.
-  visibility = "private"
+  visibility = "public" # made public 2026-10-18 to use a GitHub Environment
+  # for a required-reviewer apply gate -- see README "CI". Matches
+  # hephaistos-rs/org-state, which is public for the same reason.
 
   topics = []
 
@@ -25,7 +27,7 @@ resource "github_repository" "org_state" {
   has_wiki        = false
   has_discussions = false
 
-  allow_forking               = false
+  allow_forking               = true # GitHub sets this true automatically on a public repo
   web_commit_signoff_required = false
 
   allow_merge_commit = true
