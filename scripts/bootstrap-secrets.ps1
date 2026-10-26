@@ -74,11 +74,11 @@ Set-GhSecret -Name "GH_READ_TOKEN" -Level "repo" `
     -Where "github.com -> Settings -> Developer settings -> Fine-grained tokens -> Generate new token. Resource owner: tbxkit. Repository access: All repositories (current and future). Permissions: Administration = Read-only, Metadata = Read-only."
 
 Set-GhSecret -Name "R2_READ_ACCESS_KEY_ID" -Level "repo" `
-    -What "Access key ID for a READ-ONLY R2 API token, used by PR plan jobs." `
-    -Where "Cloudflare dashboard -> R2 -> Manage API tokens -> Create API token. Permissions: Object Read only. Scope to the 'tbxkit-tofu-state' bucket specifically, not account-wide, if the dashboard offers that option."
+    -What "Access key ID for the R2 API token (Object Read & Write). Same value goes into R2_WRITE_ACCESS_KEY_ID below -- one token, reused, matching hephaistos-rs/org-state. See backend.tf for the trade-off." `
+    -Where "Cloudflare dashboard -> R2 -> Manage API tokens -> Create API token. Permissions: Object Read & Write. Scope to the 'tbxkit-tofu-state' bucket specifically, not account-wide, if the dashboard offers that option."
 
 Set-GhSecret -Name "R2_READ_SECRET_ACCESS_KEY" -Level "repo" `
-    -What "Secret access key for the SAME read-only R2 token as above -- shown once at creation time." `
+    -What "Secret access key for the SAME token as above -- shown once at creation time. Same value also goes into R2_WRITE_SECRET_ACCESS_KEY below." `
     -Where "Same Cloudflare dashboard screen as R2_READ_ACCESS_KEY_ID; copy both at the same time, you won't see the secret again."
 
 Write-Host ""
@@ -93,12 +93,12 @@ Set-GhSecret -Name "GH_APPLY_TOKEN" -Level "environment" `
     -Where "Same place as GH_READ_TOKEN, a SEPARATE token. Resource owner: tbxkit. Repository access: All repositories (current and future). Permissions: Administration = Read and write, Metadata = Read-only."
 
 Set-GhSecret -Name "R2_WRITE_ACCESS_KEY_ID" -Level "environment" `
-    -What "Access key ID for a READ+WRITE R2 API token, used by the apply job on main." `
-    -Where "Cloudflare dashboard -> R2 -> Manage API tokens -> Create API token (a SEPARATE token from the read one). Permissions: Object Read & Write. Scope to 'tbxkit-tofu-state' if possible."
+    -What "Same R2 API token's access key ID as R2_READ_ACCESS_KEY_ID above -- paste the identical value here." `
+    -Where "The same Cloudflare R2 token you already created above (Object Read & Write, scoped to 'tbxkit-tofu-state'). Not a separate token."
 
 Set-GhSecret -Name "R2_WRITE_SECRET_ACCESS_KEY" -Level "environment" `
-    -What "Secret access key for the SAME read+write R2 token as above." `
-    -Where "Same Cloudflare dashboard screen as R2_WRITE_ACCESS_KEY_ID."
+    -What "Same R2 API token's secret access key as R2_READ_SECRET_ACCESS_KEY above -- paste the identical value here." `
+    -Where "Same token, same values as R2_READ_SECRET_ACCESS_KEY."
 
 Write-Host ""
 Write-Host "Done. Verify with:" -ForegroundColor Magenta

@@ -73,7 +73,7 @@ gh secret list --repo tbxkit/org-state --env apply
 | `GH_READ_TOKEN` | Fine-grained PAT, read-only | GitHub web UI, fine-grained token: Administration = Read-only, Metadata = Read-only, all tbxkit repos |
 | `TOFU_STATE_PASSPHRASE` | 32-character passphrase, state/plan encryption | Generated once, shown to Damian once, saved in his password manager |
 | `R2_ENDPOINT` | R2 S3-compatible endpoint URL | `https://<account-id>.r2.cloudflarestorage.com` |
-| `R2_READ_ACCESS_KEY_ID` / `R2_READ_SECRET_ACCESS_KEY` | R2 token, Object Read only | Cloudflare dashboard -> R2 -> Manage API tokens |
+| `R2_READ_ACCESS_KEY_ID` / `R2_READ_SECRET_ACCESS_KEY` | R2 token, Object Read & Write (same token as `R2_WRITE_*` below — see backend.tf) | Cloudflare dashboard -> R2 -> Manage API tokens |
 
 **`apply` environment secrets** (only readable by the gated `apply` job):
 
