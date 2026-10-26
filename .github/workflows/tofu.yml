@@ -108,6 +108,10 @@ jobs:
       - name: Summarize plan and check for destroy/replace
         if: env.is_same_repo == 'true' && steps.plan.outputs.exitcode != '1'
         id: summary
+        env:
+          # tofu show needs this to decrypt the saved plan file --
+          # plan files are encrypted too, per encryption.tf.
+          TF_VAR_state_passphrase: ${{ secrets.TOFU_STATE_PASSPHRASE }}
         run: |
           tofu show -json pr.tfplan > plan.json
 
