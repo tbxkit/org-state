@@ -17,3 +17,4 @@ crash.*.log
 # Plan output files (may embed state/secret values).
 *.tfplan
 *.plan
+.wrangler/

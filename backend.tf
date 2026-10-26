@@ -11,10 +11,17 @@
 # hephaistos-rs's "org-state.tfstate" in its own bucket; this bucket name
 # alone already prevents a collision, but a tbxkit-specific key is kept
 # too in case the bucket is ever shared.
+#
+# Matching hephaistos-rs/org-state: one R2 API token (Object Read &
+# Write), reused for both R2_READ_* and R2_WRITE_* secrets. This means
+# the PR 'plan' job's credential can technically also write to the state
+# bucket, not just read it -- an accepted trade-off for simplicity, same
+# as hephaistos-rs. Swapping the repo-level pair for a genuinely
+# Object-Read-only token tightens this later without any code change.
 
 terraform {
   backend "s3" {
-    bucket       = "tbxkit-tofu-state" # TODO(damian): confirm/create this R2 bucket
+    bucket       = "tbxkit-tofu-state" # created via wrangler r2 bucket create, 2026-10-18
     key          = "org-state.tfstate"
     region       = "auto"
     use_lockfile = true
